@@ -38,23 +38,46 @@ extern "C" void app_main(void)
 	power_config.light_sleep_enable = false;
     esp_pm_configure(&power_config);
 
+    gpio_config_t pCFG = {};
+    pCFG.pin_bit_mask = 0b10101;
+    pCFG.intr_type = GPIO_INTR_DISABLE;
+    pCFG.mode = GPIO_MODE_OUTPUT_OD;
+
+    gpio_config(&pCFG);
 
 	XaI2C::MasterAction::init(GPIO_NUM_12, GPIO_NUM_13);
 
     const char *tString = "Helu!";
-	std::array<uint8_t, 20> tData;
-	memcpy(tData.data(), tString, strlen(tString));
+	 uint32_t rCommand = 0x593412;
+
+	 uint16_t measVoltage;
 
     while (true) {
     	auto tCMD = XaI2C::MasterAction(112);
 
-    	tData[0]++;
-    	tData[1]++;
+    	tCMD.write(0x02, &rCommand, 3);
+		uint32_t dBuff;
+		tCMD.read(&dBuff, 4);
+    	auto ret = tCMD.execute();
 
-    	tCMD.write(1, tData.data(), 6);
-    	tCMD.execute();
+		measVoltage = *reinterpret_cast<uint16_t*>(reinterpret_cast<uint8_t*>(&dBuff) + 1);
+
+    	gpio_set_level(GPIO_NUM_0, false);
+    	gpio_set_level(GPIO_NUM_2, false);
+    	gpio_set_level(GPIO_NUM_4, false);
+
+    	if(ret != ESP_OK) {
+    		printf("I2C Error: %s\n", esp_err_to_name(ret));
+
+    		gpio_set_level(GPIO_NUM_4, true);
+
+    		if(ret == ESP_ERR_TIMEOUT)
+    			gpio_set_level(GPIO_NUM_0, true);
+    	}
+    	else {
+    		printf("Measured voltage is: %d\n", measVoltage);
+    	}
 
     	vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
-
