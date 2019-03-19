@@ -19,6 +19,34 @@
 
 #include "MasterAction.h"
 
+#include "SSD1327.h"
+#include "LittleConsole.h"
+
+auto screen = Peripheral::OLED::SSD1327();
+
+auto consoleBox = Peripheral::OLED::DrawBox(128, 64, &screen);
+auto sConsole = Peripheral::OLED::LittleConsole(consoleBox);
+
+auto testBox = Peripheral::OLED::DrawBox(64, 12, &screen);
+
+float boxFillPercent = 0;
+void redrawTestBox() {
+	testBox.draw_line(0, 1, 10, 1, 2);
+	testBox.draw_line(63, 1, 10, 1, 2);
+	testBox.draw_line(1, 0, 62, 0, 2);
+	testBox.draw_line(1, 11, 62, 0, 2);
+
+	testBox.draw_box(53, 0, 10, 12, 2, 2);
+	testBox.write_char(55, 3, 'V', 0);
+
+	if(boxFillPercent >= 0.02)
+		testBox.draw_box(1, 1, 52*boxFillPercent, 10, 1, 1);
+
+	char voltBuffer[10] = {};
+	sprintf(voltBuffer, "%02.2f", boxFillPercent*100);
+	testBox.write_string(1 + 52/2 - 3*strlen(voltBuffer), 3, voltBuffer);
+}
+
 esp_err_t event_handler(void *ctx, system_event_t *event)
 {
     return ESP_OK;
@@ -33,7 +61,7 @@ extern "C" void app_main(void)
     esp_timer_init();
 
     esp_pm_config_esp32_t power_config = {};
-    power_config.max_freq_mhz = 80;
+    power_config.max_freq_mhz = 240;
 	power_config.min_freq_mhz = 80;
 	power_config.light_sleep_enable = false;
     esp_pm_configure(&power_config);
@@ -45,12 +73,24 @@ extern "C" void app_main(void)
 
     gpio_config(&pCFG);
 
-	XaI2C::MasterAction::init(GPIO_NUM_12, GPIO_NUM_13);
+	XaI2C::MasterAction::init(GPIO_NUM_14, GPIO_NUM_13);
+
+	screen.initialize();
+
+	testBox.offsetY = 70;
+	testBox.offsetX = 32;
+	testBox.onRedraw = redrawTestBox;
 
     const char *tString = "Helu!";
 	 uint32_t rCommand = 0x593412;
 
-	 uint16_t measVoltage;
+	 uint16_t measVoltage = 0;
+
+	 while (true) {
+	 	vTaskDelay(50);
+	 	boxFillPercent = (measVoltage%330)/330.0;
+		sConsole.printf("Test no. %d\n", measVoltage++);
+	 }
 
     while (true) {
     	auto tCMD = XaI2C::MasterAction(112);
@@ -67,7 +107,7 @@ extern "C" void app_main(void)
     	gpio_set_level(GPIO_NUM_4, false);
 
     	if(ret != ESP_OK) {
-    		printf("I2C Error: %s\n", esp_err_to_name(ret));
+    		sConsole.printf("I2C Error: %s\n", esp_err_to_name(ret));
 
     		gpio_set_level(GPIO_NUM_4, true);
 
@@ -75,7 +115,7 @@ extern "C" void app_main(void)
     			gpio_set_level(GPIO_NUM_0, true);
     	}
     	else {
-    		printf("Measured voltage is: %d\n", measVoltage);
+    		sConsole.printf("Measured voltage is: %d\n", measVoltage);
     	}
 
     	vTaskDelay(1000 / portTICK_PERIOD_MS);
